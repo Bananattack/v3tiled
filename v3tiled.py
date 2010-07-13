@@ -281,8 +281,6 @@ class Map(object):
         print("    Saved to '" + self.zoneDummyFilename + "'.")
         
     def toXML(self):
-        "Attempts to export the Verge .map to a .tmx. WIP."
-        
         doc = Document()
         
         def addProperty(doc, props, key, value):
@@ -489,8 +487,6 @@ class Map(object):
         doc.appendChild(map)
         return doc
         
-        
-
 def convertMap(name):
     print('Loading \'' + name + '\'...')
     map = Map(name)
