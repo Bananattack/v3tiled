@@ -2,7 +2,7 @@ v3tiled
 ===========
 *an exporter tool by Andrew G. Crowell <<overkill9999@gmail.com>>*
 
-Plops out a map (and the VSP it uses) into a .tmx and some .png files. Requires [Python](http://python.org/) and [PIL](http://www.pythonware.com/products/pil/) (see also: [effbot.org downloads](http://effbot.org/downloads/#pil)) installed. Have fun.
+Converts a maped3 .map format (and its .vsp tileset it uses) into a .tmx and some .png files. Requires [Python](http://python.org/) and [PIL](http://www.pythonware.com/products/pil/) (see also: [effbot.org downloads](http://effbot.org/downloads/#pil)). Have fun.
 
 Usage:
 ------
