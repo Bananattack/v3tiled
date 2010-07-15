@@ -2,7 +2,7 @@ v3tiled
 =======
 *an exporter tool by Andrew Crowell <<overkill9999@gmail.com>>*
 
-The `v3tiled` package is a set of tools for converting maped3 formats into tiled-friendly formats, and the reverse.
+The `v3tiled` package comes with a set of tools for converting maped3 formats into tiled-friendly formats, and vice-versa.
 
 Requirements:
 -------------
