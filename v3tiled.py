@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+import os
 import v3formats
 
 def convertMap(name, needVSP, compress):
@@ -14,12 +15,12 @@ def convertMap(name, needVSP, compress):
     print('Creating zone dummy image...')
     map.dumpZoneDummyImage()
     print('Converting map...')
-    f = file(name + '.tmx', 'w')
+    f = file(os.path.splitext(name)[0] + '.tmx', 'w')
     doc = map.toTiledDocument(compress)
     print('    Saving document...')
     f.write(doc.toprettyxml(indent='    '))
     f.close()
-    print('    Saved to \'' + name + '.tmx\'.')
+    print('    Saved to \'' + os.path.splitext(name)[0] + '.tmx\'.')
     print('Done.')
     
 def convertVSP(name='', **kwargs):
