@@ -145,16 +145,11 @@ class Layer(object):
         self.width = f.readShort()
         self.height = f.readShort()
         self.data = [0] * (self.width * self.height)
-        
-        lucent = f.readByte()
-        self.alpha = 1 - lucent / 100
+        self.alpha = 1 - f.readByte() / 100
         
         layerdata = f.readCompressed()
         for i in range(len(layerdata) / 2):
             self.data[i], = struct.unpack('@H', layerdata[i * 2 : i * 2 + 2])
-        
-        self.xOffset = 0
-        self.yOffset = 0
 
 
 
@@ -249,7 +244,7 @@ class Map(object):
         self.mapName = f.readFixedString(256)
         self.vspFilename = f.readFixedString(256)
         self.musicFilename = f.readFixedString(256)
-        self.rstring = f.readFixedString(256).split(',')
+        self.renderOrder = f.readFixedString(256).split(',')
         self.renderItem = {}
         self.startEvent = f.readFixedString(256)
 
@@ -408,10 +403,10 @@ class Map(object):
             tileset.appendChild(tile)
         map.appendChild(tileset)
         
-        # Tile layers (probably needs rstring reordering)
+        # Tile layers (iterated in order by the map's rstring data)
         first = True
         print('    Visible layers...')
-        for key in self.rstring:
+        for key in self.renderOrder:
             if key == 'E':
                 print('        Entities...')
                 lay = doc.createElement('objectgroup')
@@ -448,6 +443,7 @@ class Map(object):
                     lay.appendChild(obj)
                 map.appendChild(lay)
             elif key == 'R':
+                # This object layer needs to exist solely to give a render position to HookRetrace.
                 print('        Retrace...')
                 lay = doc.createElement('objectgroup')
                 lay.setAttribute('width', str(self.width))
