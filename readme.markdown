@@ -1,18 +1,8 @@
 v3tiled
-===========
+=======
 *an exporter tool by Andrew Crowell <<overkill9999@gmail.com>>*
 
-Converts a maped3 .map format (and its .vsp tileset it uses) into a .tmx and some .png files.
-
-Usage:
-------
-
-Run from commandline like so (if using Unix style shell):
-
-        ./v3tile.py MAPFILE [MAPFILE...]
-or:
-
-        python v3tiled.py MAPFILE [MAPFILE...]
+The `v3tiled` package is a set of tools for converting maped3 formats into tiled-friendly formats, and the reverse.
 
 Requirements:
 -------------
