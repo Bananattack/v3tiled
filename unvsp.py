@@ -27,7 +27,7 @@ if __name__ == '__main__':
         if count == 0:
             print('')
             sys.stderr.write(sys.argv[0] + ': no input files\n')
-            print('* Usage: [OPTIONS]' + sys.argv[0] + ' file [file ...]')
+            print('* Usage: ' + sys.argv[0] + ' [OPTIONS] file [file ...]')
             print('')
             print('Convert a .vsp back to an image.')
             print('')
