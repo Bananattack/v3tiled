@@ -4,7 +4,11 @@ import v3formats
 def convertMap(name, needVSP, compress):
     map = v3formats.Map()
     print('Loading \'' + name + '\'...')
-    map.loadMapFile(name)
+    try:
+        map.loadMapFile(name)
+    except v3formats.FormatException as e:
+        sys.stderr.write(sys.argv[0] + ': ' + str(e) + '\n')
+        return
     if needVSP:
         convertVSP(vsp = map.vsp)
     print('Creating zone dummy image...')
@@ -25,8 +29,11 @@ def convertVSP(name='', **kwargs):
     else:
         vsp = v3formats.VSP()
         print('Loading \'' + name + '\'...')
-        vsp.loadVSPFile(name)
-    
+        try:
+            vsp.loadVSPFile(name)
+        except v3formats.FormatException as e:
+            sys.stderr.write(sys.argv[0] + ': ' + str(e) + '\n')
+            return
     print('Converting tileset...')
     vsp.dumpTiles()
     print('Converting tileset obstructions...')
@@ -65,20 +72,25 @@ if __name__ == '__main__':
                 elif arg.lower().endswith('.vsp'):
                     convertVSP(arg)
                 else:
-                    sys.stderr.write(sys.argv[0] + ': file \'' + arg + '\' has unknown extension.\n')
-                    sys.exit(-1)
+                    sys.stderr.write(sys.argv[0] + ': file \'' + arg + '\' has an unsupported extension.\n')
         if count == 0:
             print('')
             sys.stderr.write(sys.argv[0] + ': no input files\n')
-            print('* Usage: [OPTIONS]' + sys.argv[0] + ' file [file ...]')
+            print('* Usage: ' + sys.argv[0] + ' [OPTIONS] file [file ...]')
             print('')
-            print('Convert maped3 formats into .tmx + .png files.')
+            print('Convert maped3 formats into tiled-friendly files.')
             print('')
-            print('file: a file to convert. This can be a .map or .vsp.')
-            print('(a .map will also require the .vsp that the map uses)')
+            print('file:')
+            print('    a file to convert. This can be a .map or .vsp file.')
+            print('    If the file is a .map, it will assume the .vsp and its converted parts')
+            print('    that the exported .tmx needs exist. Use -v if you want to convert the .vsp')
+            print('    along with the map.')
+            print('')
+            print('    If the file is a .vsp, it exports a .png, as well as a .anim file which')
+            print('    is used to store the animation info of the original VSP.')
             print('')
             print('OPTIONS:')
-            print('-v               convert the .vsp used by any map.')
+            print('-v               convert the .vsp used by any map, like passed on commandline.')
             print('-raw             use plain-text XML (no compression).')
             print('-z               (default) compress the .tmx map with zlib.')
     
