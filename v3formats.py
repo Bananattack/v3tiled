@@ -1,5 +1,7 @@
 import datastream
 import struct
+import base64
+import zlib
 import os.path
 import xml.dom.minidom
 import PIL.Image
@@ -318,7 +320,7 @@ class Map(object):
         image.save(self.zoneDummyFilename, 'PNG')
         print('    Saved to \'' + self.zoneDummyFilename + '\'.')
         
-    def toTiledDocument(self, embedAnim=False):
+    def toTiledDocument(self, compress=False, embedAnim=False):
         doc = xml.dom.minidom.Document()
         
         def addProperty(doc, props, key, value):
@@ -468,21 +470,30 @@ class Map(object):
                 lay.appendChild(props)
                 
                 data = doc.createElement('data')
-                d = layer.data
+                # tile 0 is drawn as-is on the first layer, but is completely transparent on higher layers.
                 if first:
-                    for i in range(self.width * self.height):
-                        tile = doc.createElement('tile')
-                        tile.setAttribute('gid', str(d[i] + 1))
-                        data.appendChild(tile)
+                    if compress:
+                        data.setAttribute('encoding', 'base64')
+                        data.setAttribute('compression', 'zlib')                        
+                        text = doc.createTextNode(base64.b64encode(zlib.compress(struct.pack('<' + str(layer.width * layer.height) + 'i', *[t + 1 for t in layer.data]))))
+                        data.appendChild(text)
+                    else:
+                        for t in layer.data:
+                            tile = doc.createElement('tile')
+                            tile.setAttribute('gid', str(t + 1))
+                            data.appendChild(tile)
                     first = False
                 else:
-                    for i in range(self.width * self.height):
-                        tile = doc.createElement('tile')
-                        if d[i] == 0:
-                            tile.setAttribute('gid', '0')
-                        else:
-                            tile.setAttribute('gid', str(d[i] + 1))
-                        data.appendChild(tile)
+                    if compress:
+                        data.setAttribute('encoding', 'base64')
+                        data.setAttribute('compression', 'zlib')
+                        text = doc.createTextNode(base64.b64encode(zlib.compress(struct.pack('<' + str(layer.width * layer.height) + 'i', *[t != 0 and t + 1 or 0 for t in layer.data]))))
+                        data.appendChild(text)
+                    else:
+                        for t in layer.data:
+                            tile = doc.createElement('tile')
+                            tile.setAttribute('gid', t != 0 and str(t + 1) or '0')
+                            data.appendChild(tile)
                 lay.appendChild(data)
                 map.appendChild(lay)
         
@@ -495,12 +506,17 @@ class Map(object):
         lay.setAttribute('opacity', '1')
         
         data = doc.createElement('data')
-        d = self.obsLayer
         id = self.vsp.tileLastGID + 1
-        for i in range(self.width * self.height):
-            tile = doc.createElement('tile')
-            tile.setAttribute('gid', str(d[i] + id))
-            data.appendChild(tile)
+        if compress:
+            data.setAttribute('encoding', 'base64')
+            data.setAttribute('compression', 'zlib')
+            text = doc.createTextNode(base64.b64encode(zlib.compress(struct.pack('<' + str(self.width * self.height) + 'i', *[t + id for t in self.obsLayer]))))
+            data.appendChild(text)
+        else:
+            for t in self.obsLayer:
+                tile = doc.createElement('tile')
+                tile.setAttribute('gid', str(t + id))
+                data.appendChild(tile)
         lay.appendChild(data)
         map.appendChild(lay)
         
@@ -513,12 +529,17 @@ class Map(object):
         lay.setAttribute('opacity', str(1))
         
         data = doc.createElement('data')
-        d = self.zoneLayer
         id = self.vsp.obsLastGID + 1
-        for i in range(self.width * self.height):
-            tile = doc.createElement('tile')
-            tile.setAttribute('gid', str(d[i] + id))
-            data.appendChild(tile)
+        if compress:
+            data.setAttribute('encoding', 'base64')
+            data.setAttribute('compression', 'zlib')
+            text = doc.createTextNode(base64.b64encode(zlib.compress(struct.pack('<' + str(self.width * self.height) + 'i', *[t + id for t in self.zoneLayer]))))
+            data.appendChild(text)
+        else:
+            for t in self.zoneLayer:
+                tile = doc.createElement('tile')
+                tile.setAttribute('gid', str(t + id))
+                data.appendChild(tile)
         lay.appendChild(data)
         map.appendChild(lay)
         
