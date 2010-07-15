@@ -6,14 +6,10 @@ import PIL.Image
 import PIL.ImageDraw
 import PIL.ImageFont
 
-MAP_SIGNATURE = 'V3MAP\0'
-MAP_VERSION = 2
+class FormatException(Exception):
+    pass
 
-VSP_SIGNATURE = 5264214
-VSP_VERSION = 6
-VSP_FORMAT = 1
-VSP_COMPRESSION = 1
-VSP_TILESIZE  = 16
+
 
 ANIMATION_MODE = {
     '0': 'forward',
@@ -21,39 +17,31 @@ ANIMATION_MODE = {
     '2': 'random',
     '3': 'ping_pong',
 }
-
-ENTITY_DIR = {
-    '0': 'north',
-    '1': 'south',
-    '2': 'west',
-    '3': 'east',
-    '4': 'north_west',
-    '5': 'north_east',
-    '6': 'south_west',
-    '7': 'south_east',
-}
-
-ENTITY_MOVEMENT = {
-    '0': 'none',
-    '1': 'wander_zone',
-    '2': 'wander_rect',
-    '3': 'script',
-}
-
-class FormatException(Exception):
-    pass
     
 class Animation(object):
-    def __init__(self, name, start, end, delay, mode):
+    def __init__(self):
         self.id = -1
-        self.name = name
-        self.start = start
-        self.end = end
-        self.delay = delay
-        self.mode = ANIMATION_MODE.get(str(mode), 'forward')
+    
+    def readFromVSP(self, f):
+        self.name = f.readFixedString(256)
+        self.start = f.readInt()
+        self.end = f.readInt()
+        self.delay = f.readInt()
+        self.mode = ANIMATION_MODE.get(f.readInt(), 'forward')
+
+
+
+VSP_SIGNATURE = 5264214
+VSP_VERSION = 6
+VSP_FORMAT = 1
+VSP_COMPRESSION = 1
+VSP_TILESIZE  = 16
     
 class VSP(object):
-    def __init__(self, filename):
+    def __init__(self):
+        pass
+        
+    def loadVSPFile(self, filename):
         self.filename = filename
         try:
             f = datastream.DataInputStream(file(filename, 'rb'))
@@ -82,14 +70,9 @@ class VSP(object):
         self.animation = []
         animationCount = f.readInt()
         for i in range(animationCount):
-            name = f.readFixedString(256)
-            start = f.readInt()
-            end = f.readInt()
-            delay = f.readInt()
-            mode = f.readInt()
-            
-            anim = Animation(name, start, end, delay, mode)
+            anim = Animation()
             anim.id = i
+            anim.readFromVSP(f)
             self.animation.append(anim)
         
         self.obs = []
@@ -132,18 +115,13 @@ class VSP(object):
         obsImage.save(self.filename + self.obsImageName, 'PNG')
         print('    Saved to \'' + self.filename + self.obsImageName + '\'.')
 
-class Zone(object):
-    def __init__(self, name, script, method, chance, delay):
-        self.name = name
-        self.activationEvent = script
-        self.method = method
-        self.chance = chance / 255.0
-        print(name + ':' + script + ':' + str(method) + ':' + str(chance) + ':' + str(delay))
-        self.delay = delay
+
 
 class Layer(object):
-    def __init__(self, f):
+    def __init__(self):
         self.id = -1
+        
+    def readFromMap(self, f):
         self.name = f.readFixedString(256)
         self.parallaxX = f.readDouble()
         self.parallaxY = f.readDouble()
@@ -160,9 +138,45 @@ class Layer(object):
         
         self.xOffset = 0
         self.yOffset = 0
-        
+
+
+
+class Zone(object):
+    def __init__(self):
+        self.id = -1
+    
+    def readFromMap(self, f):
+        self.name = f.readFixedString(256)
+        self.activationEvent = f.readFixedString(256)
+        self.chance = f.readUnsignedByte() / 255.0
+        self.delay = f.readUnsignedByte()
+        self.method = f.readUnsignedByte()
+
+
+
+ENTITY_DIR = {
+    '0': 'north',
+    '1': 'south',
+    '2': 'west',
+    '3': 'east',
+    '4': 'north_west',
+    '5': 'north_east',
+    '6': 'south_west',
+    '7': 'south_east',
+}
+
+ENTITY_MOVEMENT = {
+    '0': 'none',
+    '1': 'wander_zone',
+    '2': 'wander_rect',
+    '3': 'script',
+}
+
 class Entity(object):
-    def __init__(self, f):
+    def __init__(self):
+        self.id = -1
+        
+    def readFromMap(self, f):
         self.x = f.readShort()
         self.y = f.readShort()
         self.direction = ENTITY_DIR.get(f.readByte(), 'north')
@@ -182,9 +196,17 @@ class Entity(object):
         self.filename = f.readFixedString(256)
         self.description = f.readFixedString(256)
         self.activationEvent = f.readFixedString(256)
+
+
+
+MAP_SIGNATURE = 'V3MAP\0'
+MAP_VERSION = 2
         
 class Map(object):
-    def __init__(self, filename):
+    def __init__(self):
+        pass
+        
+    def loadMapFile(self, filename):
         self.filename = filename
         self.zoneDummyFilename = filename + '.zone.png'
         try:
@@ -217,14 +239,16 @@ class Map(object):
         # Starting location. If not specificied in script, use the map's default.
         self.startX = f.readUnsignedShort()
         self.startY = f.readUnsignedShort()
-        self.vsp = VSP(os.path.dirname(self.filename) + '/' + self.vspFilename)
+        self.vsp = VSP()
+        self.vsp.loadVSPFile(os.path.dirname(self.filename) + '/' + self.vspFilename)
 
         # Layers!
         layerCount = f.readInt()
         self.layer = []
         for i in range(layerCount):
-            layer = Layer(f)
+            layer = Layer()
             layer.id = i
+            layer.readFromMap(f)
             self.layer.append(layer)
             self.renderItem[str(layer.id + 1)] = layer
 
@@ -248,18 +272,19 @@ class Map(object):
         zoneCount = f.readInt()
         self.zone = []
         for i in range(zoneCount):
-            name = f.readFixedString(256)
-            script = f.readFixedString(256)
-            chance = f.readUnsignedByte()
-            delay = f.readUnsignedByte()
-            method = f.readUnsignedByte()
-            self.zone.append(Zone(name, script, method, chance, delay))
+            zone = Zone()
+            zone.id = i
+            zone.readFromMap(f)
+            self.zone.append(zone)
 
         # Entities!
         self.entity = []
         entityCount = f.readInt()
         for i in range(entityCount):
-            self.entity.append(Entity(f))
+            ent = Entity()
+            ent.id = i
+            ent.readFromMap(f)
+            self.entity.append(ent)
             
         # We're done with the map file
         f.close()
@@ -278,7 +303,7 @@ class Map(object):
         image.save(self.zoneDummyFilename, 'PNG')
         print('    Saved to \'' + self.zoneDummyFilename + '\'.')
         
-    def toXML(self):
+    def exportTMX(self):
         doc = xml.dom.minidom.Document()
         
         def addProperty(doc, props, key, value):

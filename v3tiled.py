@@ -2,8 +2,9 @@
 import v3formats
         
 def convertMap(name):
+    map = v3formats.Map()
     print('Loading \'' + name + '\'...')
-    map = v3formats.Map(name)
+    map.loadMapFile(name)
     print('Dumping tileset...')
     map.vsp.dumpTiles()
     print('Dumping tileset obstructions...')
@@ -12,7 +13,7 @@ def convertMap(name):
     map.dumpZoneDummyImage()
     print('Converting map...')
     f = file(name + '.tmx', 'w')
-    doc = map.toXML()
+    doc = map.exportTMX()
     print('    Saving document...')
     f.write(doc.toprettyxml(indent='    '))
     f.close()
