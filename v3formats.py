@@ -19,6 +19,8 @@ ANIMATION_MODE = {
     '2': 'random',
     '3': 'ping_pong',
 }
+
+ANIMATION_MODE_OUT = dict((v, k) for k, v in ANIMATION_MODE.iteritems())
     
 class Animation(object):
     def __init__(self):
@@ -177,12 +179,16 @@ ENTITY_DIR = {
     '7': 'south_east',
 }
 
+ENTITY_DIR_OUT = dict((v, k) for k, v in ENTITY_DIR.iteritems())
+
 ENTITY_MOVEMENT = {
     '0': 'none',
     '1': 'wander_zone',
     '2': 'wander_rect',
     '3': 'script',
 }
+
+ENTITY_MOVEMENT_OUT = dict((v, k) for k, v in ENTITY_MOVEMENT.iteritems())
 
 class Entity(object):
     def __init__(self):
