@@ -3,7 +3,7 @@ v3tiled
 *an exporter tool by Andrew Crowell <<overkill9999@gmail.com>>*
 
 The `v3tiled` package comes with a set of tools for converting maped3 formats into tiled-friendly formats, and vice-versa.    
-*See [this wiki](http://wiki.github.com/Bananattack/v3tiled/) for more information on their usage.*
+**See [this wiki](http://wiki.github.com/Bananattack/v3tiled/) for more information on their usage.**
 
 Requirements:
 -------------
