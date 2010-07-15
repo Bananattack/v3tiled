@@ -114,6 +114,21 @@ class VSP(object):
                 image[x + i % 16, y + i / 16] = pixel
         obsImage.save(self.filename + self.obsImageName, 'PNG')
         print('    Saved to \'' + self.filename + self.obsImageName + '\'.')
+        
+    def toAnimDocument(self):
+        doc = xml.dom.minidom.Document()
+        animations = doc.createElement('animations')
+        for anim in self.animation:
+            node = doc.createElement('animation')
+            node.setAttribute('id', str(anim.id))
+            node.setAttribute('name', str(anim.name))
+            node.setAttribute('tile_begin', str(anim.start))
+            node.setAttribute('tile_end', str(anim.end))
+            node.setAttribute('delay', str(anim.delay))
+            node.setAttribute('mode', str(anim.mode))
+            animations.appendChild(node)
+        doc.appendChild(animations)
+        return doc
 
 
 
@@ -303,7 +318,7 @@ class Map(object):
         image.save(self.zoneDummyFilename, 'PNG')
         print('    Saved to \'' + self.zoneDummyFilename + '\'.')
         
-    def exportTMX(self):
+    def toTiledDocument(self, embedAnim=False):
         doc = xml.dom.minidom.Document()
         
         def addProperty(doc, props, key, value):
@@ -329,12 +344,13 @@ class Map(object):
         addProperty(doc, props, 'start_x', str(self.startX))
         addProperty(doc, props, 'start_y', str(self.startY))
         
-        for anim in self.vsp.animation:
-            addProperty(doc, props, 'vsp_anim_' + str(anim.id) + '_name', str(anim.name))
-            addProperty(doc, props, 'vsp_anim_' + str(anim.id) + '_start', str(anim.start))
-            addProperty(doc, props, 'vsp_anim_' + str(anim.id) + '_end', str(anim.end))
-            addProperty(doc, props, 'vsp_anim_' + str(anim.id) + '_delay', str(anim.delay))
-            addProperty(doc, props, 'vsp_anim_' + str(anim.id) + '_mode', str(anim.mode))
+        if embedAnim:
+            for anim in self.vsp.animation:
+                addProperty(doc, props, 'vsp_anim_' + str(anim.id) + '_name', str(anim.name))
+                addProperty(doc, props, 'vsp_anim_' + str(anim.id) + '_start', str(anim.start))
+                addProperty(doc, props, 'vsp_anim_' + str(anim.id) + '_end', str(anim.end))
+                addProperty(doc, props, 'vsp_anim_' + str(anim.id) + '_delay', str(anim.delay))
+                addProperty(doc, props, 'vsp_anim_' + str(anim.id) + '_mode', str(anim.mode))
         
         map.appendChild(props)
         
