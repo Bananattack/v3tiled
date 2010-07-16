@@ -20,11 +20,16 @@ ANIMATION_MODE = {
     '3': 'ping_pong',
 }
 
-ANIMATION_MODE_OUT = dict((v, k) for k, v in ANIMATION_MODE.iteritems())
+ANIMATION_MODE_OUT = dict((v, int(k)) for k, v in ANIMATION_MODE.iteritems())
     
 class Animation(object):
-    def __init__(self):
+    def __init__(self, **kwargs):
         self.id = -1
+        self.name = kwargs.get('name', '')
+        self.start = kwargs.get('start', -1)
+        self.end = kwargs.get('end', -1)
+        self.delay = kwargs.get('delay', -1)
+        self.mode = kwargs.get('mode', 'forward')
     
     def readFromVSP(self, f):
         self.name = f.readFixedString(256)
@@ -32,7 +37,14 @@ class Animation(object):
         self.end = f.readInt()
         self.delay = f.readInt()
         self.mode = ANIMATION_MODE.get(f.readInt(), 'forward')
-
+        
+    def writeToVSP(self, f):
+        f.writeFixedString(self.name, 256)
+        f.writeInt(self.start)
+        f.writeInt(self.end)
+        f.writeInt(self.delay)
+        f.writeInt(ANIMATION_MODE_OUT.get(self.mode, 0))
+        
 
 
 VSP_SIGNATURE = 5264214
@@ -87,6 +99,28 @@ class VSP(object):
 
         f.close()
         
+    def saveVSPFile(self, filename):
+        self.filename = filename
+        try:
+            f = datastream.DataOutputStream(file(filename, 'wb'))
+        except IOError:
+            raise FormatException('The VSP file \'' + filename + '\' could not be opened for writing!')
+        f.writeInt(VSP_SIGNATURE)
+        f.writeInt(VSP_VERSION)
+        f.writeInt(16) # tilesize
+        f.writeInt(1) # format
+        f.writeInt(self.tileCount)
+        f.writeInt(1) # compression
+        f.writeCompressed(struct.pack('<' + str(self.tileCount * 16 * 16 * 3) + 'B', *self.tilePixels))
+        f.writeInt(len(self.animation))
+        for anim in self.animation:
+            anim.writeToVSP(f)
+        self.obs = []
+        f.writeInt(self.obsCount)
+        f.writeCompressed(struct.pack('<' + str(self.obsCount * 16 * 16) + 'B', *self.obsPixels))
+        f.close()
+        
+        
     def dumpTiles(self):
         pixels = self.tilePixels
         tileImage = PIL.Image.new('RGBA', (20 * 16, (self.tileCount // 20 + 1) * 16))
@@ -96,7 +130,7 @@ class VSP(object):
             y, x = tile // 20 * 16, tile % 20 * 16
             for i in range(16 * 16):
                 idx = tile * 16 * 16 + i
-                r, g, b = struct.unpack('@BBB', pixels[idx * 3 : idx * 3 + 3])
+                r, g, b = struct.unpack('<BBB', pixels[idx * 3 : idx * 3 + 3])
                 a = 255
                 if r == 255 and g == 0 and b == 255:
                     a = 0
@@ -113,7 +147,7 @@ class VSP(object):
             y, x = tile // 20 * 16, tile % 20 * 16
             for i in range(16 * 16):
                 idx = tile * 16 * 16 + i
-                pixel, = struct.unpack('@B', pixels[idx])
+                pixel, = struct.unpack('<B', pixels[idx])
                 pixel = pixel and (255, 255, 255, 127) or (0, 0, 0, 0)
                 image[x + i % 16, y + i / 16] = pixel
         obsImage.save(self.filename + self.obsImageName, 'PNG')
@@ -134,7 +168,70 @@ class VSP(object):
         doc.appendChild(animations)
         return doc
 
-
+    def buildFromExternal(self, tileFile, obsFile, animFile=None):
+        img = PIL.Image.open(tileFile)
+        w, h = img.size
+        if w % 16 or h % 16:
+            raise FormatException('The tile image file \'' + tileFile + '\' has invalid size ' + str(w) + 'x' + str(h) + '! Must be multiples of 16 in size.')
+        pixels = img.load() 
+        self.tileCount = (w // 16) * (h // 16)
+        tilePixels = []
+        for t in range(self.tileCount): 
+            x = t * 16 % w
+            y = t * 16 // w * 16
+            for j in range(16):
+                for i in range(16):
+                    p = pixels[x + i, y + j]
+                    if p[3] < 255:
+                        tilePixels.append(255)
+                        tilePixels.append(0)
+                        tilePixels.append(255)
+                    else:
+                        tilePixels.append(p[0])
+                        tilePixels.append(p[1])
+                        tilePixels.append(p[2])
+        self.tilePixels = tilePixels
+        
+        img = PIL.Image.open(obsFile)
+        w, h = img.size
+        if w % 16 or h % 16:
+            raise FormatException('The obstruction image file \'' + obsFile + '\' has invalid size ' + str(w) + 'x' + str(h) + '! Must be multiples of 16 in size.')
+        pixels = img.load() 
+        self.obsCount = (w // 16) * (h // 16)
+        obsPixels = []
+        for t in range(self.obsCount): 
+            x = t * 16 % w
+            y = t * 16 // w * 16
+            for j in range(16):
+                for i in range(16):
+                    obsPixels.append((pixels[x + i, y + j][3] != 0) and 1 or 0)
+        self.obsPixels = obsPixels
+        
+        self.animation = []
+        if animFile:
+            def requireInteger(node, attr):
+                attr = node.getAttribute(attr)
+                if attr:
+                    try:
+                        return int(attr)
+                    except:
+                        raise FormatException('Attribute \'' + attr + '\' in animation file \'' + animFile + '\' is not integer.')
+                else:
+                    raise FormatException('Required attribute \'' + attr + '\' in animation file \'' + animFile + '\' is missing.')
+        
+            dom = xml.dom.minidom.parse(animFile)
+            i = 0
+            for node in dom.getElementsByTagName('animation'):
+                delay = requireInteger(node, 'delay')
+                start = requireInteger(node, 'tile_begin')
+                end = requireInteger(node, 'tile_end')
+                mode = node.getAttribute('mode') or 'forward'
+                name = node.getAttribute('name')
+                
+                anim = Animation(delay = delay, start = start, end = end, mode = mode, name = name)
+                anim.id = i
+                self.animation.append(anim)
+                i += 1
 
 class Layer(object):
     def __init__(self):
@@ -151,7 +248,7 @@ class Layer(object):
         
         layerdata = f.readCompressed()
         for i in range(len(layerdata) / 2):
-            self.data[i], = struct.unpack('@H', layerdata[i * 2 : i * 2 + 2])
+            self.data[i], = struct.unpack('<H', layerdata[i * 2 : i * 2 + 2])
 
 
 
@@ -179,7 +276,7 @@ ENTITY_DIR = {
     '7': 'south_east',
 }
 
-ENTITY_DIR_OUT = dict((v, k) for k, v in ENTITY_DIR.iteritems())
+ENTITY_DIR_OUT = dict((v, int(k)) for k, v in ENTITY_DIR.iteritems())
 
 ENTITY_MOVEMENT = {
     '0': 'none',
@@ -188,7 +285,7 @@ ENTITY_MOVEMENT = {
     '3': 'script',
 }
 
-ENTITY_MOVEMENT_OUT = dict((v, k) for k, v in ENTITY_MOVEMENT.iteritems())
+ENTITY_MOVEMENT_OUT = dict((v, int(k)) for k, v in ENTITY_MOVEMENT.iteritems())
 
 class Entity(object):
     def __init__(self):
@@ -278,13 +375,13 @@ class Map(object):
         self.obsLayer = [False] * (self.width * self.height)
         layerdata = f.readCompressed()
         for i in range(len(layerdata)):
-            self.obsLayer[i], = struct.unpack('@b', layerdata[i])
+            self.obsLayer[i], = struct.unpack('<b', layerdata[i])
 
         # Zone layer!
         self.zoneLayer = [None] * (self.width * self.height)
         layerdata = f.readCompressed()
         for i in range(len(layerdata) / 2):
-            self.zoneLayer[i], = struct.unpack('@H', layerdata[i * 2 : i * 2 + 2])
+            self.zoneLayer[i], = struct.unpack('<H', layerdata[i * 2 : i * 2 + 2])
 
         # Zone info!
         zoneCount = f.readInt()
