@@ -11,7 +11,7 @@ if __name__ == '__main__':
             vsp.saveVSPFile(sys.argv[1])
         else:
             print('')
-            print(sys.argv[0] + ': ' + (len(sys.argv) < 4 and 'insufficient' or 'too many') + ' arguments.')
+            sys.stderr.write(sys.argv[0] + ': ' + (len(sys.argv) < 4 and 'insufficient' or 'too many') + ' arguments.\n')
             print('Usage: ' + sys.argv[0] + ' output tile obs [anim]')
             print('')
             print('Combines images and animation information to make a .vsp file.')

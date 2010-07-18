@@ -68,6 +68,12 @@ class DataInputStream(object):
     def readDouble(self):
         v, = struct.unpack('<d', self.file.read(struct.calcsize('<d')))
         return v
+        
+    def tell(self):
+        return self.file.tell()
+        
+    def seek(self, offset, whence=0):
+        self.file.seek(offset, whence)
     
     def close (self):
         self.file.close()
@@ -120,6 +126,12 @@ class DataOutputStream(object):
         
     def writeDouble(self, v):
         self.write(struct.pack('<d', v))
+        
+    def tell(self):
+        return self.file.tell()
+        
+    def seek(self, offset, whence=0):
+        self.file.seek(offset, whence)
     
     def close(self):
         self.file.close()

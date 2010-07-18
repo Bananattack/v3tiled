@@ -40,10 +40,7 @@ def convertVSP(name='', **kwargs):
     print('Converting tileset obstructions...')
     vsp.dumpObs()
     print('Exporting animation info...')
-    doc = vsp.toAnimDocument()
-    f = file(vsp.filename + '.anim', 'w')
-    f.write(doc.toprettyxml(indent='    '))
-    f.close()
+    vsp.toAnimDocument().write(vsp.filename + '.anim', encoding = 'UTF-8', xml_declaration = True)
     print('    Saved to \'' + vsp.filename + '.anim\'.')    
 
 if __name__ == '__main__':

@@ -7,10 +7,51 @@ import xml.dom.minidom
 import PIL.Image
 import PIL.ImageDraw
 import PIL.ImageFont
+from xml.etree import cElementTree as etree
 
 class FormatException(Exception):
     pass
 
+def getNodeName(node):
+    if hasattr(node, 'tag'):
+        return '<' + node.tag + '>'
+    if type(node) == dict:
+        return node.get('_node', '?')
+    return '?'
+
+def getIntegerNode(node, attr, default=None):
+    if node.get(attr) is not None: 
+        try:
+            return int(node.get(attr))
+        except:
+            raise FormatException('Attribute \'' + attr + '\' on ' + getNodeName(node) + ' is not an integer.')
+    elif default is not None:
+        return default
+    else:
+        raise FormatException('Required attribute \'' + attr + '\' on ' + getNodeName(node) + ' is missing.')
+        
+def getNumericNode(node, attr, default=None):
+    if node.get(attr) is not None: 
+        try:
+            return float(node.get(attr))
+        except:
+            raise FormatException('Attribute \'' + attr + '\' on ' + getNodeName(node) + ' is not a number.')
+    elif default is not None:
+        return default
+    else:
+        raise FormatException('Required attribute \'' + attr + '\' on ' + getNodeName(node) + ' is missing.')
+
+def getProperties(elem):
+    props = elem.find('properties')
+    if not props:
+        return {}
+    else:
+        d = {}
+        d['_node'] = '<properties>'
+        for prop in props.iter('property'):
+            if prop.get('name'):
+                d[prop.get('name')] = prop.get('value')
+        return d
 
 
 ANIMATION_MODE = {
@@ -62,15 +103,15 @@ class VSP(object):
         try:
             f = datastream.DataInputStream(file(filename, 'rb'))
         except IOError:
-            raise FormatException('The VSP file \'' + filename + '\' was not found.')
+            raise FormatException('VSP file \'' + filename + '\' was not found.')
         
         signature = f.readInt()
         version = f.readInt()
         
         if signature != VSP_SIGNATURE:
-            raise FormatException('The VSP file \'' + filename + '\' has a bad signature of ' + signature)
+            raise FormatException('VSP has a bad signature of ' + signature)
         if version != VSP_VERSION:
-            raise FormatException('The VSP file \'' + filename + '\' has a bad version of ' + str(version))
+            raise FormatException('VSP has a bad version of ' + str(version))
             
         tilesize = f.readInt()
         format = f.readInt()
@@ -81,7 +122,7 @@ class VSP(object):
         
         self.tilePixels = f.readCompressed()
         self.tileImageName = '.tile.png'
-        self.tileLastGID = (self.tileCount // 20 + 1) * 20
+        self.tileLastGID = ((self.tileCount + 19) // 20) * 20
             
         self.animation = []
         animationCount = f.readInt()
@@ -95,7 +136,7 @@ class VSP(object):
         self.obsCount = f.readInt()
         self.obsImageName = '.obs.png' 
         self.obsPixels = f.readCompressed()
-        self.obsLastGID = (self.obsCount // 20 + 1) * 20 + self.tileLastGID + 1
+        self.obsLastGID = ((self.obsCount + 19) // 20) * 20 + self.tileLastGID + 1
 
         f.close()
         
@@ -154,22 +195,23 @@ class VSP(object):
         print('    Saved to \'' + self.filename + self.obsImageName + '\'.')
         
     def toAnimDocument(self):
-        doc = xml.dom.minidom.Document()
-        animations = doc.createElement('animations')
+        animations = etree.Element('animations')
         for anim in self.animation:
-            node = doc.createElement('animation')
-            node.setAttribute('id', str(anim.id))
-            node.setAttribute('name', str(anim.name))
-            node.setAttribute('tile_begin', str(anim.start))
-            node.setAttribute('tile_end', str(anim.end))
-            node.setAttribute('delay', str(anim.delay))
+            node = etree.SubElement(animations, 'animation')
+            node.set('id', str(anim.id))
+            node.set('name', str(anim.name))
+            node.set('tile_begin', str(anim.start))
+            node.set('tile_end', str(anim.end))
+            node.set('tile_end', str(anim.delay))
             node.setAttribute('mode', str(anim.mode))
-            animations.appendChild(node)
-        doc.appendChild(animations)
-        return doc
+        tree = etree.ElementTree(root)
+        return tree
 
     def buildFromExternal(self, tileFile, obsFile, animFile=None):
-        img = PIL.Image.open(tileFile)
+        try:
+            img = PIL.Image.open(tileFile)
+        except:
+            raise FormatException('Failure attempting to load ' + filename + '.')
         w, h = img.size
         if w % 16 or h % 16:
             raise FormatException('The tile image file \'' + tileFile + '\' has invalid size ' + str(w) + 'x' + str(h) + '! Must be multiples of 16 in size.')
@@ -192,7 +234,10 @@ class VSP(object):
                         tilePixels.append(p[2])
         self.tilePixels = tilePixels
         
-        img = PIL.Image.open(obsFile)
+        try:
+            img = PIL.Image.open(obsFile)
+        except:
+            raise FormatException('Failure attempting to load ' + filename + '.')
         w, h = img.size
         if w % 16 or h % 16:
             raise FormatException('The obstruction image file \'' + obsFile + '\' has invalid size ' + str(w) + 'x' + str(h) + '! Must be multiples of 16 in size.')
@@ -209,29 +254,26 @@ class VSP(object):
         
         self.animation = []
         if animFile:
-            def requireInteger(node, attr):
-                attr = node.getAttribute(attr)
-                if attr:
-                    try:
-                        return int(attr)
-                    except:
-                        raise FormatException('Attribute \'' + attr + '\' in animation file \'' + animFile + '\' is not integer.')
-                else:
-                    raise FormatException('Required attribute \'' + attr + '\' in animation file \'' + animFile + '\' is missing.')
-        
-            dom = xml.dom.minidom.parse(animFile)
+            try:
+                animations = etree.parse(animFile).getroot()
+            except:
+                raise FormatException('Failure attempting to parse ' + filename + '.')
             i = 0
-            for node in dom.getElementsByTagName('animation'):
-                delay = requireInteger(node, 'delay')
-                start = requireInteger(node, 'tile_begin')
-                end = requireInteger(node, 'tile_end')
-                mode = node.getAttribute('mode') or 'forward'
-                name = node.getAttribute('name')
-                
-                anim = Animation(delay = delay, start = start, end = end, mode = mode, name = name)
-                anim.id = i
-                self.animation.append(anim)
-                i += 1
+            
+            try:
+                for node in animations.iter('animation'):
+                    delay = getIntegerNode(node, 'delay')
+                    start = getIntegerNode(node, 'tile_begin')
+                    end = getIntegerNode(node, 'tile_end')
+                    mode = node.get('mode', 'forward')
+                    name = node.get('name', '')
+                    
+                    anim = Animation(delay = delay, start = start, end = end, mode = mode, name = name)
+                    anim.id = i
+                    self.animation.append(anim)
+                    i += 1
+            except FormatException as e:
+                raise FormatException('Animation file \'' + str(animFile) + '\' contains an invalid animation: ' + str(e))
 
 class Layer(object):
     def __init__(self):
@@ -244,25 +286,76 @@ class Layer(object):
         self.width = f.readShort()
         self.height = f.readShort()
         self.data = [0] * (self.width * self.height)
-        self.alpha = 1 - f.readByte() / 100
+        self.alpha = 1 - float(f.readUnsignedByte()) / 100.0
         
         layerdata = f.readCompressed()
         for i in range(len(layerdata) / 2):
             self.data[i], = struct.unpack('<H', layerdata[i * 2 : i * 2 + 2])
+            
+    def writeToMap(self, f):
+        f.writeFixedString(self.name, 256)
+        f.writeDouble(self.parallaxX)
+        f.writeDouble(self.parallaxY)
+        f.writeShort(self.width)
+        f.writeShort(self.height)
+        f.writeUnsignedByte(100 - int(self.alpha * 100.0 + 0.5))
+        f.writeCompressed(struct.pack('<' + str(self.width * self.height) + 'H', *self.data))
 
-
+    def convertFromTiled(self, node):
+        self.name = node.get('name', '')
+        self.width = getIntegerNode(node, 'width')
+        self.height = getIntegerNode(node, 'height')
+        self.alpha = getNumericNode(node, 'opacity', 1.0)
+        props = getProperties(node)
+        self.id = getIntegerNode(props, 'id')
+        self.parallaxX = getNumericNode(props, 'parallax_x', 1.0)
+        self.parallaxY = getNumericNode(props, 'parallax_y', 1.0)
+        data = node.find('data')
+        if data != None:
+            if data.get('encoding') or data.get('compression'):
+                if data.get('encoding') == 'base64' and data.get('compression') == 'zlib':
+                    # Convert base64'd zlib'd chunk of 32-bit integers into a list of ints [max(N - 1, 0)...].
+                    self.data = [max(t - 1, 0) for t in struct.unpack('<' + str(self.width * self.height) + 'i', zlib.decompress(base64.b64decode(str(data.text))))]
+                else:
+                    raise FormatException('Cannot parse layers with ' + str(data.get('encoding')) + ' encoding and ' + str(data.get('compression')) + ' compression.')
+            else:
+                # Convert <tile gid='N'/>... into a list of ints [max(N - 1, 0)...].
+                self.data = [max(int(t.get('gid', '1')) - 1, 0) for t in data.iter('tile')]
+                if len(self.data) != self.width * self.height:
+                    raise FormatException('Layer does not contain exactly ' + str(self.width * self.height) + ' tiles in a layer that is ' + str(self.width) + 'x' + str(self.height) + ' in size.')
+        else:
+            raise FormatException('Mising <data> tag.')
 
 class Zone(object):
     def __init__(self):
         self.id = -1
+        self.name = ''
+        self.activationEvent = ''
+        self.chance = 255
+        self.delay = 0
+        self.method = 1
     
     def readFromMap(self, f):
         self.name = f.readFixedString(256)
         self.activationEvent = f.readFixedString(256)
-        self.chance = f.readUnsignedByte() / 255.0
+        self.chance = f.readUnsignedByte()
         self.delay = f.readUnsignedByte()
         self.method = f.readUnsignedByte()
-
+        
+    def writeToMap(self, f):
+        f.writeFixedString(self.name, 256)
+        f.writeFixedString(self.activationEvent, 256)
+        f.writeUnsignedByte(self.chance)
+        f.writeUnsignedByte(self.delay)
+        f.writeUnsignedByte(self.method)
+        
+    def convertFromTiled(self, node):
+        props = getProperties(node)
+        self.name = props.get('name', '')
+        self.activationEvent = props.get('activation_event', '')
+        self.chance = getIntegerNode(props, 'activation_chance', 255)
+        self.delay = getIntegerNode(props, 'activation_delay', 0)
+        self.method = props.get('allow_adjacent') == 'true' and 1 or 0
 
 
 ENTITY_DIR = {
@@ -294,7 +387,7 @@ class Entity(object):
     def readFromMap(self, f):
         self.x = f.readShort()
         self.y = f.readShort()
-        self.direction = ENTITY_DIR.get(f.readByte(), 'north')
+        self.direction = ENTITY_DIR.get(f.readByte(), 'south')
         self.isObstructable = f.readByte()
         self.isObstruction = f.readByte()
         self.autoface = f.readByte()
@@ -311,6 +404,52 @@ class Entity(object):
         self.filename = f.readFixedString(256)
         self.description = f.readFixedString(256)
         self.activationEvent = f.readFixedString(256)
+        
+    def writeToMap(self, f):
+        f.writeShort(self.x)
+        f.writeShort(self.y)
+        f.writeByte(ENTITY_DIR_OUT[self.direction])
+        f.writeByte(self.isObstructable)
+        f.writeByte(self.isObstruction)
+        f.writeByte(self.autoface)
+        f.writeShort(self.speed)
+        f.writeByte(0) # unused activation mode
+        f.writeByte(ENTITY_MOVEMENT_OUT[self.movementMode])
+        f.writeShort(self.wanderX1)
+        f.writeShort(self.wanderY1)
+        f.writeShort(self.wanderX2)
+        f.writeShort(self.wanderY2)
+        f.writeShort(self.wanderDelay)
+        f.writeInt(0) # unused expand flag
+        f.writeFixedString(self.movescript, 256)
+        f.writeFixedString(self.filename, 256)
+        f.writeFixedString(self.description, 256)
+        f.writeFixedString(self.activationEvent, 256)
+        
+    def convertFromTiled(self, node):
+        self.x = getIntegerNode(node, 'x') // VSP_TILESIZE
+        self.y = getIntegerNode(node, 'y') // VSP_TILESIZE
+        self.description = node.get('name')
+        props = getProperties(node)
+        self.id = getIntegerNode(props, 'id')
+        self.filename = props.get('filename', '')
+        self.activationEvent = props.get('activation_event', '')
+        self.direction = props.get('direction', 'south')
+        if self.direction not in ENTITY_DIR_OUT:
+            raise FormatException('Invalid direction ' + repr(self.direction) + '.')
+        self.isObstructable = props.get('is_obstructable') == 'true' and 1 or 0
+        self.isObstruction = props.get('is_obstruction') == 'true' and 1 or 0
+        self.autoface = props.get('autoface') == 'true' and 1 or 0
+        self.speed = getIntegerNode(props, 'speed', 100)
+        self.movementMode = props.get('movement_mode', 'none')
+        if self.movementMode not in ENTITY_MOVEMENT_OUT:
+            raise FormatException('Invalid movement mode ' + repr(self.movementMode) + '.')
+        self.wanderX1 = getIntegerNode(props, 'wander_x1', 0)
+        self.wanderY1 = getIntegerNode(props, 'wander_y1', 0)
+        self.wanderX2 = getIntegerNode(props, 'wander_x2', 0)
+        self.wanderY2 = getIntegerNode(props, 'wander_y2', 0)
+        self.wanderDelay = getIntegerNode(props, 'wander_delay', 0)
+        self.movescript = props.get('movescript', '')
 
 
 
@@ -320,6 +459,20 @@ MAP_VERSION = 2
 class Map(object):
     def __init__(self):
         pass
+        
+    def dumpZoneDummyImage(self):
+        font = PIL.ImageFont.load_default()
+        zoneCount = len(self.zone)
+        image = PIL.Image.new('RGBA', (20 * 16, ((zoneCount + 19) // 20) * 16))
+        draw = PIL.ImageDraw.Draw(image)
+        bg = (127, 0, 127, 127)
+        textColor = (255, 255, 255, 255)
+        for i in range(1, zoneCount):
+            x, y = i % 20 * 16, i / 20 * 16
+            draw.rectangle((x, y, x + 15, y + 15), fill = bg)
+            draw.text((x, y), str(i), font = font, fill = textColor)
+        image.save(self.zoneDummyFilename, 'PNG')
+        print('    Saved to \'' + self.zoneDummyFilename + '\'.')
         
     def loadMapFile(self, filename):
         self.filename = filename
@@ -346,6 +499,8 @@ class Map(object):
         # String data of various use.
         self.mapName = f.readFixedString(256)
         self.vspFilename = f.readFixedString(256)
+        self.vsp = VSP()
+        self.vsp.loadVSPFile(os.path.dirname(self.filename) + '/' + self.vspFilename)
         self.musicFilename = f.readFixedString(256)
         self.renderOrder = f.readFixedString(256).split(',')
         self.renderItem = {}
@@ -354,8 +509,6 @@ class Map(object):
         # Starting location. If not specificied in script, use the map's default.
         self.startX = f.readUnsignedShort()
         self.startY = f.readUnsignedShort()
-        self.vsp = VSP()
-        self.vsp.loadVSPFile(os.path.dirname(self.filename) + '/' + self.vspFilename)
 
         # Layers!
         layerCount = f.readInt()
@@ -366,27 +519,14 @@ class Map(object):
             layer.readFromMap(f)
             self.layer.append(layer)
             self.renderItem[str(layer.id + 1)] = layer
-
-        # Dimensions!
         self.width = self.layer[0].width
         self.height = self.layer[0].height
-
-        # Obstructions layer!
-        self.obsLayer = [False] * (self.width * self.height)
-        layerdata = f.readCompressed()
-        for i in range(len(layerdata)):
-            self.obsLayer[i], = struct.unpack('<b', layerdata[i])
-
-        # Zone layer!
-        self.zoneLayer = [None] * (self.width * self.height)
-        layerdata = f.readCompressed()
-        for i in range(len(layerdata) / 2):
-            self.zoneLayer[i], = struct.unpack('<H', layerdata[i * 2 : i * 2 + 2])
+        self.obsLayer = [i for i in struct.unpack('<' + str(self.width * self.height) + 'B', f.readCompressed())]
+        self.zoneLayer = [i for i in struct.unpack('<' + str(self.width * self.height) + 'H', f.readCompressed())]
 
         # Zone info!
-        zoneCount = f.readInt()
         self.zone = []
-        for i in range(zoneCount):
+        for i in range(f.readInt()):
             zone = Zone()
             zone.id = i
             zone.readFromMap(f)
@@ -394,8 +534,7 @@ class Map(object):
 
         # Entities!
         self.entity = []
-        entityCount = f.readInt()
-        for i in range(entityCount):
+        for i in range(f.readInt()):
             ent = Entity()
             ent.id = i
             ent.readFromMap(f)
@@ -403,22 +542,219 @@ class Map(object):
             
         # We're done with the map file
         f.close()
-    
-    def dumpZoneDummyImage(self):
-        font = PIL.ImageFont.load_default()
-        zoneCount = len(self.zone)
-        image = PIL.Image.new('RGBA', (20 * 16, (zoneCount // 20 + 1) * 16))
-        draw = PIL.ImageDraw.Draw(image)
-        bg = (127, 0, 127, 127)
-        textColor = (255, 255, 255, 255)
-        for i in range(1, zoneCount):
-            x, y = i % 20 * 16, i / 20 * 16
-            draw.rectangle((x, y, x + 16, y + 16), fill = bg)
-            draw.text((x, y), str(i), font = font, fill = textColor)
-        image.save(self.zoneDummyFilename, 'PNG')
-        print('    Saved to \'' + self.zoneDummyFilename + '\'.')
+
+    def saveMapFile(self, filename, vspFilename):
+        try:
+            f = datastream.DataOutputStream(file(filename, 'wb'))
+        except IOError:
+            raise FormatException('The MAP file \'' + filename + '\' could not be opened for writing.')
+
+        f.write(MAP_SIGNATURE)
+        f.writeInt(MAP_VERSION)
         
-    def toTiledDocument(self, compress=False, embedAnim=False):
+        # Write a dummy offset for now, but this needs to be backpatched, once the real map is completed.
+        vc = f.tell()
+        f.writeInt(0)
+        
+        # The usual crap.
+        f.writeFixedString(self.mapName, 256)
+        f.writeFixedString(vspFilename, 256)
+        f.writeFixedString(self.musicFilename, 256)
+        f.writeFixedString(','.join(self.renderOrder), 256)
+        f.writeFixedString(self.startEvent, 256)
+        f.writeUnsignedShort(self.startX)
+        f.writeUnsignedShort(self.startY)
+        f.writeInt(len(self.layer))
+        for lay in self.layer:
+            lay.writeToMap(f)
+        f.writeCompressed(struct.pack('<' + str(self.width * self.height) + 'b', *self.obsLayer))
+        f.writeCompressed(struct.pack('<' + str(self.width * self.height) + 'H', *self.zoneLayer))
+        f.writeInt(len(self.zone))
+        for z in self.zone:
+            z.writeToMap(f)
+        f.writeInt(len(self.entity))
+        for ent in self.entity:
+            ent.writeToMap(f)
+
+        # Write the vc offset.
+        end = f.tell()
+        f.seek(vc)
+        f.writeInt(end)
+        f.close()
+        
+    def convertFromTiled(self, filename):
+        self.zoneDummyFilename = filename + '.zone.png'
+        try:
+            tree = etree.parse(filename)
+        except:
+            raise FormatException('Failure attempting to parse ' + filename + '.')
+        map = tree.getroot()
+        if map.get('version') != '1.0':
+            raise FormatException('Unsupported version ' + map.get('version') + '. This only supports tiled 1.0 maps.')
+        if map.get('orientation') != 'orthogonal':
+            raise FormatException('Uses unsupported orientation \'' + map.get('orientation') + '\'. Only orthogonal maps are allowed.')
+        if map.get('tilewidth') != '16' or map.get('tileheight') != '16':
+            raise FormatException('Unsupported map tile size ' + str(map.get('tilewidth')) + 'x' + str(map.get('tileheight')) + '. Only 16x16 is supported.') 
+        
+        props = getProperties(map)
+        print('    Importing properties...')
+        try:
+            self.mapName = props.get('title', os.path.splitext(filename)[0])
+            self.musicFilename = props.get('music', '')
+            self.startEvent = props.get('start_event', '')
+            self.startX = getIntegerNode(props, 'start_x', 0)
+            self.startY = getIntegerNode(props, 'start_y', 0)
+        except FormatException as e:
+            raise FormatException('Bad map property: ' + str(e)) 
+        
+        print('    Importing tileset references...')
+        hasTiles = False
+        hasObs = False
+        obsGID = 0
+        hasZones = False
+        zoneGID = 0
+        zoneData = {}
+        for tileset in map.iter('tileset'):
+            if tileset.get('tilewidth') != '16' or tileset.get('tileheight') != '16':
+                raise FormatException('Unsupported tile size ' + str(map.get('tilewidth')) + 'x' + str(map.get('tileheight')) + ' on tileset ' + repr(tileset.get('name')) + '. Only 16x16 is supported.')
+
+            if tileset.get('name') == 'tiles':
+                if hasTiles:
+                    raise FormatException('This file has more than one \'tiles\' <tileset>.') 
+                hasTiles = True
+            elif tileset.get('name') == 'obstructions':
+                if hasObs:
+                    raise FormatException('This file has more than one \'obstructions\' <tileset>.') 
+                obsGID = getIntegerNode(tileset, 'firstgid')
+                hasObs = True
+            elif tileset.get('name') == 'zones':
+                if hasZones:
+                    raise FormatException('This file has more than one \'zones\' <tileset>.')
+                zoneGID = getIntegerNode(tileset, 'firstgid')
+                for tile in tileset.iter('tile'):
+                    if tile.get('id'):
+                        try:
+                            zone = Zone()
+                            zone.convertFromTiled(tile)
+                            zoneData[tile.get('id')] = zone
+                        except FormatException as e:
+                            raise FormatException('Invalid zone with id=' + repr(tile.get('id')) + ': ' + str(e))
+                    else:
+                        raise FormatException('There is a <tile> in the \'zones\' <tileset> without an id.')
+                hasZones = True
+            else:
+                raise FormatException('Tileset ' + repr(tileset.get('name')) + ' that cannot be exported. Must be named \'tiles\', \'obstructions\' or \'zones\'') 
+        if not hasTiles:
+            raise FormatException('Missing a \'tiles\' tileset.')
+            
+        # Now convert a sparse map of id -> zone into a list of zones with a size of max id.
+        self.zone = [None] * max(int(id) + 1 for id, zone in zoneData.iteritems())
+        for id, zone in zoneData.iteritems():
+            self.zone[int(id)] = zone
+        # Fill any gaps with default zones:
+        for i in range(len(self.zone)):
+            self.zone[i] = self.zone[i] or Zone()
+            self.zone[i].id = i
+            
+        self.renderOrder = []
+        self.renderItem = {}
+
+        print('    Layers, retrace and entities...')
+        layerData = {}
+        # First pass, renderables.
+        for layer in map.iter():
+            if layer.tag == 'objectgroup':
+                if layer.get('name') == 'Entities':
+                    entData = {}
+                    self.renderOrder.append('E')
+                    for ob in layer.iter('object'):
+                        try:
+                            ent = Entity()
+                            ent.convertFromTiled(ob)
+                            entData[ent.id] = ent
+                        except FormatException as e:
+                            raise FormatException('Invalid entity with name=' + repr(ob.get('name')) + ': ' + str(e))                    
+
+                    self.entity = [None] * max(int(id) + 1 for id, ent in entData.iteritems())
+                    for id, ent in entData.iteritems():
+                        self.entity[int(id)] = ent
+                    # Error if there are any gaps in the list.
+                    for i in range(len(self.entity)):
+                        if not self.entity[i]:
+                            raise FormatException('Invalid map. All entities must have a id property, and these must be consecutive (no gaps). '
+                                                + 'Expected entity with id of ' + str(i) + '. '
+                                                + 'Maximum id was determined to be ' + str(len(self.entity) - 1) + ', so there should id from 0 up to and including '
+                                                + str(len(self.entity) - 1) + '.')
+                elif layer.get('name') == 'Retrace':
+                    self.renderOrder.append('R')
+                else:
+                    raise FormatException('Object layer ' + repr(tileset.get('name')) + ' cannot be exported. Must be named \'Retrace\' or \'Entities\'') 
+            if layer.tag == 'layer':        
+                if layer.get('name') != 'Obstructions' and layer.get('name') != 'Zones':
+                    lay = Layer()
+                    try:
+                        lay.convertFromTiled(layer)
+                    except FormatException as e:
+                        raise FormatException('Invalid layer with name=\'' + layer.get('name') + '\': ' + str(e))
+                    layerData[lay.id] = lay
+                    self.renderOrder.append(str(lay.id + 1))
+                    self.renderItem[lay.id + 1] = lay
+
+        # Now convert a sparse map of id -> zone into a list of layers with a size of max id.
+        self.layer = [None] * max(int(id) + 1 for id, lay in layerData.iteritems())
+        if not len(self.layer):
+            raise FormatException('Invalid map. Must contain at least one layer.')
+        for id, lay in layerData.iteritems():
+            self.layer[int(id)] = lay
+        # Error if there are any gaps in the list.
+        for i in range(len(self.layer)):
+            if not self.layer[i]:
+                raise FormatException('Invalid map. All layers must have a id property, and these must be consecutive (no gaps). '
+                    + 'Expected layer with id of ' + str(i) + '. '
+                    + 'Maximum id was determined to be ' + str(len(self.layer) - 1) + ', so there should id from 0 up to and including '
+                    + str(len(self.layer) - 1) + '.')
+
+        self.width = self.layer[0].width
+        self.height = self.layer[0].height
+
+        print('    Zones and obstructions...')
+        # Second pass: obstructions and zones.
+        for layer in map.iter('layer'):
+            if layer.get('name') == 'Obstructions':
+                if not hasObs:
+                    raise FormatException('This map has an \'Obstructions\' layer but is missing the \'obstructions\' tileset.')
+                data = layer.find('data')
+                if data != None:
+                    if data.get('encoding') or data.get('compression'):
+                        if data.get('encoding') == 'base64' and data.get('compression') == 'zlib':
+                            # Convert base64'd zlib'd chunk of 32-bit integers into a list of obs
+                            self.obsLayer = [t - obsGID for t in struct.unpack('<' + str(self.width * self.height) + 'i', zlib.decompress(base64.b64decode(str(data.text))))]
+                        else:
+                            raise FormatException('Cannot parse Obstructions layer with ' + str(data.get('encoding')) + ' encoding and ' + str(data.get('compression')) + ' compression.')
+                    else:
+                        # Convert <tile gid='N'/>... into a list of ints [obs, obs, obs...].
+                        self.obsLayer = [int(t.get('gid', str(obsGID))) - obsGID for t in data.iter('tile')]
+                else:
+                    raise FormatException('Obstructions layer is missing <data> tag.')
+            elif layer.get('name') == 'Zones':
+                if not hasZones:
+                    raise FormatException('This map has an \'Zones\' layer but is missing the \'zones\' tileset.')
+                data = layer.find('data')
+                if data != None:
+                    if data.get('encoding') or data.get('compression'):
+                        if data.get('encoding') == 'base64' and data.get('compression') == 'zlib':
+                            # Convert base64'd zlib'd chunk of 32-bit integers into a list of zones
+                            self.zoneLayer = [t - zoneGID for t in struct.unpack('<' + str(self.width * self.height) + 'i', zlib.decompress(base64.b64decode(str(data.text))))]
+                        else:
+                            raise FormatException('Cannot parse Zones layer with ' + str(data.get('encoding')) + ' encoding and ' + str(data.get('compression')) + ' compression.')
+                    else:
+                        # Convert <tile gid='N'/>... into a list of ints [zone, zone, zone...].
+                        self.zoneLayer = [int(t.get('gid', str(zoneGID))) - zoneGID for t in data.iter('tile')]
+                else:
+                    raise FormatException('Zones layer is missing <data> tag.')
+        print('    ...OK.')
+        
+    def toTiledDocument(self, compress=False):
         doc = xml.dom.minidom.Document()
         
         def addProperty(doc, props, key, value):
@@ -436,21 +772,13 @@ class Map(object):
         map.setAttribute('tilewidth', str(VSP_TILESIZE))
         map.setAttribute('tileheight', str(VSP_TILESIZE))
         
-        print('    Exporting tileset animation info...')
+        print('    Exporting properties...')
         props = doc.createElement('properties')
         addProperty(doc, props, 'title', self.mapName)
         addProperty(doc, props, 'music', self.musicFilename)
         addProperty(doc, props, 'start_event', self.startEvent)
         addProperty(doc, props, 'start_x', str(self.startX))
         addProperty(doc, props, 'start_y', str(self.startY))
-        
-        if embedAnim:
-            for anim in self.vsp.animation:
-                addProperty(doc, props, 'vsp_anim_' + str(anim.id) + '_name', str(anim.name))
-                addProperty(doc, props, 'vsp_anim_' + str(anim.id) + '_start', str(anim.start))
-                addProperty(doc, props, 'vsp_anim_' + str(anim.id) + '_end', str(anim.end))
-                addProperty(doc, props, 'vsp_anim_' + str(anim.id) + '_delay', str(anim.delay))
-                addProperty(doc, props, 'vsp_anim_' + str(anim.id) + '_mode', str(anim.mode))
         
         map.appendChild(props)
         
@@ -500,7 +828,7 @@ class Map(object):
             addProperty(doc, props, 'name', z.name)
             addProperty(doc, props, 'allow_adjacent', str(z.method and 'true' or 'false'))
             addProperty(doc, props, 'activation_event', str(z.activationEvent))
-            addProperty(doc, props, 'activation_chance', str(float(z.chance)))
+            addProperty(doc, props, 'activation_chance', str(z.chance))
             addProperty(doc, props, 'activation_delay', str(z.delay))
             tile.appendChild(props)
             tileset.appendChild(tile)
@@ -527,8 +855,13 @@ class Map(object):
                     obj.setAttribute('height', str(VSP_TILESIZE))
                     
                     props = doc.createElement('properties')
+                    addProperty(doc, props, 'id', str(entity.id))
                     addProperty(doc, props, 'filename', str(entity.filename))
                     addProperty(doc, props, 'direction', str(entity.direction))
+                    addProperty(doc, props, 'is_obstructable', str(entity.isObstruction and 'true' or 'false'))
+                    addProperty(doc, props, 'is_obstruction', str(entity.isObstruction and 'true' or 'false'))
+                    addProperty(doc, props, 'autoface', str(entity.autoface and 'true' or 'false'))
+                    addProperty(doc, props, 'speed', str(entity.speed))
                     addProperty(doc, props, 'movement_mode', str(entity.movementMode))
                     if entity.movementMode == 'wander_rect':
                         addProperty(doc, props, 'wander_x1', str(entity.wanderX1))
@@ -563,7 +896,7 @@ class Map(object):
                 lay.setAttribute('opacity', str(layer.alpha))
                 
                 props = doc.createElement('properties')
-                addProperty(doc, props, 'layer_index', str(layer.id))
+                addProperty(doc, props, 'id', str(layer.id))
                 addProperty(doc, props, 'parallax_x', str(layer.parallaxX))
                 addProperty(doc, props, 'parallax_y', str(layer.parallaxY))
                 lay.appendChild(props)
