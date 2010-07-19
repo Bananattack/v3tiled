@@ -7,7 +7,7 @@ The `v3tiled` package comes with a set of tools for converting maped3 formats in
 
 Requirements:
 -------------
-* [Python](http://python.org/)
+* [Python 2.6](http://python.org/) (Or really, 2.6 <= version < 3)
 * [PIL](http://www.pythonware.com/products/pil/)
 
 (Also: Check out [this site](http://effbot.org/downloads/#pil) for a bunch of prepacked installers for PIL.)
