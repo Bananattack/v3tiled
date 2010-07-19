@@ -198,7 +198,6 @@ class VSP(object):
         animations = etree.Element('animations')
         for anim in self.animation:
             node = etree.SubElement(animations, 'animation')
-            node.set('id', str(anim.id))
             node.set('name', str(anim.name))
             node.set('tile_begin', str(anim.start))
             node.set('tile_end', str(anim.end))
